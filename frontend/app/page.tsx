@@ -16,7 +16,6 @@ export default function Home() {
     try {
       const list = await listDocuments();
       setDocs(list);
-      // 자동 선택: 아직 선택이 없고 ready 문서가 있으면 첫번째
       if (!selectedId && list.length > 0) {
         setSelectedId(list[0].doc_id);
       }
@@ -32,79 +31,64 @@ export default function Home() {
   const selected = docs.find((d) => d.doc_id === selectedId) ?? null;
 
   return (
-    <div className="min-h-screen">
+    <div className="grid min-h-screen grid-rows-[64px_1fr]">
       {/* Header */}
-      <header className="border-b border-stone-200 bg-white">
-        <div className="mx-auto flex max-w-7xl items-baseline justify-between px-6 py-4">
-          <div>
-            <h1 className="font-mono text-lg font-bold tracking-tight text-stone-900">
-              doc<span className="text-amber-700">·</span>rag
-            </h1>
-            <p className="mt-0.5 font-mono text-[10px] uppercase tracking-widest text-stone-400">
-              ocr → classify → retrieve → answer
-            </p>
-          </div>
-          <div className="font-mono text-[10px] uppercase tracking-widest text-stone-400">
-            mvp · v0.1
-          </div>
+      <header className="sticky top-0 z-10 flex items-center gap-6 border-b border-border-main bg-white px-8">
+        <div className="flex items-center gap-2.5">
+          <img src="/assets/gamja-icon.png" alt="gamja docs" className="h-9 w-[34px] object-contain" />
+          <span className="font-display text-[19px] font-bold tracking-tight text-ink">
+            gamja<span className="ml-1 font-medium text-silver">docs</span>
+          </span>
+        </div>
+        <div className="flex-1" />
+        <div className="rounded-lg bg-secondary-bg px-3 py-1.5 font-ui text-xs font-medium text-cool">
+          mvp · v0.1
         </div>
       </header>
 
-      <main className="mx-auto grid max-w-7xl gap-6 px-6 py-6 lg:grid-cols-[320px_1fr]">
-        {/* Left: upload + list */}
-        <aside className="space-y-6">
+      {/* Body */}
+      <div className="grid grid-cols-[340px_1fr] min-h-0">
+        {/* Sidebar */}
+        <aside className="sticky top-16 flex h-[calc(100vh-64px)] flex-col overflow-hidden border-r border-border-main bg-white">
           <UploadZone
             onUploaded={(id) => {
               setSelectedId(id);
               refresh();
             }}
           />
-          <div className="rounded-sm border border-stone-200 bg-white">
-            <div className="border-b border-stone-200 px-4 py-3">
-              <h2 className="font-mono text-xs uppercase tracking-widest text-stone-500">
-                documents · {docs.length}
-              </h2>
-            </div>
-            <DocList
-              docs={docs}
-              selectedId={selectedId}
-              onSelect={setSelectedId}
-              onDelete={(id) => {
-                if (selectedId === id) setSelectedId(null);
-                refresh();
-              }}
-              onRefresh={refresh}
-            />
-          </div>
+          <DocList
+            docs={docs}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            onDelete={(id) => {
+              if (selectedId === id) setSelectedId(null);
+              refresh();
+            }}
+            onRefresh={refresh}
+          />
         </aside>
 
-        {/* Right: detail + chat */}
-        <section className="flex flex-col gap-6">
+        {/* Main */}
+        <main className="flex min-w-0 flex-col bg-bg-sunken">
           {selected ? (
             <>
               <DocDetail doc={selected} />
               <ResultDashboard doc={selected} />
-              <div className="min-h-[480px] flex-1">
-                <ChatPanel
-                  docId={selected.doc_id}
-                  disabled={selected.status !== 'ready'}
-                />
-              </div>
+              <ChatPanel
+                docId={selected.doc_id}
+                disabled={selected.status !== 'ready'}
+              />
             </>
           ) : (
-            <div className="flex min-h-[600px] items-center justify-center rounded-sm border border-dashed border-stone-300 bg-white">
-              <div className="text-center">
-                <div className="font-mono text-xs uppercase tracking-widest text-stone-400">
-                  no document selected
-                </div>
-                <p className="mt-2 text-sm text-stone-500">
-                  왼쪽에서 문서를 업로드하거나 선택하세요.
-                </p>
+            <div className="flex flex-1 flex-col items-center justify-center gap-1.5 text-silver">
+              <div className="font-display text-[22px] font-semibold tracking-tight text-cool">
+                선택된 문서가 없습니다
               </div>
+              <div className="text-sm">왼쪽에서 문서를 업로드하거나 선택하세요</div>
             </div>
           )}
-        </section>
-      </main>
+        </main>
+      </div>
     </div>
   );
 }

@@ -6,73 +6,112 @@ const STATUS_LABEL: Record<string, string> = {
   processing: 'OCR 진행 중',
   classifying: '분류 진행 중',
   indexing: '청킹·임베딩·색인 진행 중',
-  ready: '준비 완료',
+  ready: '준비 ���료',
   error: '오류',
 };
 
-const STATUS_COLOR: Record<string, string> = {
-  processing: 'bg-blue-500',
-  classifying: 'bg-blue-500',
-  indexing: 'bg-blue-500',
-  ready: 'bg-emerald-500',
-  error: 'bg-red-500',
-};
+function StatusBadge({ status }: { status: string }) {
+  const dotCls =
+    status === 'ready'
+      ? 'bg-green-sem'
+      : status === 'error'
+      ? 'bg-red-sem'
+      : 'bg-kp animate-pulse-dot';
+
+  const badgeCls =
+    status === 'error'
+      ? 'border-red-sem/25 text-red-dark'
+      : 'border-border-main text-ink';
+
+  return (
+    <span className={`inline-flex items-center gap-[7px] rounded-lg border bg-white px-2.5 py-1 font-ui text-[13px] font-medium shadow-whisper ${badgeCls}`}>
+      <span className={`h-[7px] w-[7px] shrink-0 rounded-full ${dotCls}`} />
+      {STATUS_LABEL[status] ?? status}
+    </span>
+  );
+}
 
 export default function DocDetail({ doc }: { doc: DocumentInfo }) {
   const c = doc.classification;
-  const pending = doc.status !== 'ready' && doc.status !== 'error';
+
   return (
-    <div className="rounded-sm border border-stone-200 bg-white p-5">
-      <div className="flex items-baseline justify-between">
-        <h2 className="font-mono text-xs uppercase tracking-widest text-stone-500">
-          document
-        </h2>
-        <span className="font-mono text-[10px] text-stone-400">{doc.doc_id}</span>
-      </div>
-      <div className="mt-2 flex items-center gap-3">
-        <div className="text-base font-medium text-stone-900">{doc.filename}</div>
-        <span
-          className={`inline-flex items-center gap-1.5 rounded-sm px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-white ${
-            STATUS_COLOR[doc.status] ?? 'bg-stone-500'
-          }`}
-        >
-          <span className={`h-1.5 w-1.5 rounded-full bg-white ${pending ? 'animate-pulse' : ''}`} />
-          {STATUS_LABEL[doc.status] ?? doc.status}
+    <section className="border-b border-border-main bg-white px-10 pb-7 pt-8">
+      <div className="mb-3 flex items-center justify-between">
+        <span className="font-ui text-xs font-semibold text-cool">문서</span>
+        <span className="rounded-lg bg-secondary-bg px-2.5 py-1 font-mono text-xs font-medium text-cool">
+          {doc.doc_id}
         </span>
       </div>
 
-      {doc.status === 'error' && (
-        <div className="mt-4 rounded-sm border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          {doc.error || '처리 중 오류가 발생했습니다'}
+      <h1 className="font-display text-4xl font-bold leading-tight tracking-tight text-ink">
+        {doc.filename}
+      </h1>
+
+      <div className="mt-3.5">
+        <StatusBadge status={doc.status} />
+      </div>
+
+      {doc.status === 'error' && doc.error && (
+        <div className="mt-3.5 rounded-[12px] border border-red-sem/20 bg-red-bg px-3.5 py-3 font-ui text-[13px] text-red-dark">
+          {doc.error}
         </div>
       )}
 
-      {c && (
-        <div className="mt-5 border-t border-stone-200 pt-4">
-          <div className="font-mono text-xs uppercase tracking-widest text-stone-500">
-            classification
-          </div>
-          <div className="mt-2 flex items-baseline gap-3">
-            <span className="text-2xl font-bold text-amber-700">{c.category}</span>
-            <span className="font-mono text-xs text-stone-500">
-              confidence {(c.confidence * 100).toFixed(0)}%
-            </span>
-            <span className="font-mono text-[10px] text-stone-400">
-              {c.category_code}
-            </span>
-          </div>
-          <p className="mt-1 text-sm text-stone-600">{c.reason}</p>
-        </div>
-      )}
-
-      {doc.chunk_count != null && (
-        <div className="mt-4 flex gap-6 font-mono text-xs text-stone-500">
-          <span>chunks · {doc.chunk_count}</span>
-          {doc.full_text_length != null && (
-            <span>length · {doc.full_text_length.toLocaleString()} chars</span>
+      {(c || doc.chunk_count != null) && (
+        <div className="mt-5 flex flex-wrap gap-8 border-t border-border-soft pt-[18px]">
+          {c && (
+            <>
+              <div>
+                <div className="mb-1.5 font-ui text-xs font-medium text-silver">카테고리</div>
+                <div className="flex items-baseline gap-2.5">
+                  <span className="inline-block rounded-lg border border-border-main bg-white px-3 py-1 font-display text-base font-semibold text-ink shadow-whisper">
+                    {c.category}
+                  </span>
+                  <span className="font-ui text-sm font-medium text-silver">
+                    {(c.confidence * 100).toFixed(1)}%
+                  </span>
+                </div>
+              </div>
+              {c.category_code && (
+                <div>
+                  <div className="mb-1.5 font-ui text-xs font-medium text-silver">분류 코드</div>
+                  <div className="font-display text-[22px] font-semibold tracking-tight text-ink">
+                    {c.category_code}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+          {doc.chunk_count != null && (
+            <>
+              <div>
+                <div className="mb-1.5 font-ui text-xs font-medium text-silver">청크 수</div>
+                <div className="font-display text-[22px] font-semibold tracking-tight text-ink">
+                  {doc.chunk_count}
+                </div>
+              </div>
+              {doc.full_text_length != null && (
+                <div>
+                  <div className="mb-1.5 font-ui text-xs font-medium text-silver">전체 텍스트</div>
+                  <div className="font-display text-[22px] font-semibold tracking-tight text-ink">
+                    {doc.full_text_length.toLocaleString()}
+                    <span className="ml-2.5 text-sm font-medium text-silver">자</span>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
-    </div>
+
+      {c?.reason && (
+        <div className="mt-[18px] rounded-[10px] border border-border-soft bg-bg-sunken px-4 py-3.5 text-sm leading-relaxed text-ink">
+          <div className="mb-1.5 font-ui text-[11px] font-semibold uppercase tracking-wider text-silver">
+            분류 사유
+          </div>
+          {c.reason}
+        </div>
+      )}
+    </section>
   );
 }
