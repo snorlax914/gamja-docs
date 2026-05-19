@@ -1,6 +1,6 @@
 """
 PaddleOCR-VL을 vLLM 서버로 호출해서 문서 OCR 수행.
-PDF는 pdf2image로 페이지별 이미지로 변환 후 처리.
+PDF는 pdf2image로 페이지별 이미지로 변환 후 병렬 처리.
 """
 import asyncio
 import tempfile
@@ -14,6 +14,9 @@ from pdf2image import convert_from_path
 from PIL import Image
 
 from app.config import settings
+
+# vLLM 서버에 동시에 보내는 최대 페이지 수 (GPU 메모리 보호)
+MAX_CONCURRENT_PAGES = 4
 
 
 class OCRService:
@@ -48,18 +51,19 @@ class OCRService:
         suffix = path.suffix.lower()
 
         if suffix == ".pdf":
-            return await asyncio.to_thread(self._extract_pdf, file_path)
+            return await self._extract_pdf_parallel(file_path)
         elif suffix in {".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".webp"}:
             return await asyncio.to_thread(self._predict_image, file_path)
         else:
             raise ValueError(f"지원하지 않는 파일 형식: {suffix}")
 
-    def _extract_pdf(self, pdf_path: str) -> str:
-        """PDF → 페이지별 이미지 → OCR"""
-        logger.info(f"PDF OCR 시작: {pdf_path}")
+    async def _extract_pdf_parallel(self, pdf_path: str) -> str:
+        """PDF → 페이지별 이미지 → 병렬 OCR"""
+        logger.info(f"PDF OCR 시작 (병렬, 최대 {MAX_CONCURRENT_PAGES}개 동시): {pdf_path}")
         with tempfile.TemporaryDirectory() as tmpdir:
             t = time.perf_counter()
-            images = convert_from_path(
+            images = await asyncio.to_thread(
+                convert_from_path,
                 pdf_path,
                 dpi=200,
                 output_folder=tmpdir,
@@ -69,18 +73,33 @@ class OCRService:
             logger.info(
                 f"  PDF→이미지 변환 완료: {len(images)}페이지 ({time.perf_counter() - t:.2f}s)"
             )
-            page_texts: List[str] = []
+
+            # 페이지 이미지를 먼저 모두 저장
+            img_paths: List[str] = []
             for idx, img in enumerate(images, start=1):
                 img_path = Path(tmpdir) / f"page_{idx}.png"
                 img.save(img_path, "PNG")
-                t = time.perf_counter()
-                logger.info(f"  페이지 {idx}/{len(images)} OCR 중...")
-                text = self._predict_image(str(img_path))
-                logger.info(
-                    f"  페이지 {idx}/{len(images)} 완료 "
-                    f"({time.perf_counter() - t:.2f}s, {len(text):,}자)"
-                )
-                page_texts.append(f"## Page {idx}\n\n{text}")
+                img_paths.append(str(img_path))
+
+            # Semaphore로 동시 요청 수 제한하며 병렬 OCR
+            sem = asyncio.Semaphore(MAX_CONCURRENT_PAGES)
+
+            async def _ocr_page(idx: int, path: str) -> str:
+                async with sem:
+                    t_page = time.perf_counter()
+                    logger.info(f"  페이지 {idx}/{len(images)} OCR 중...")
+                    text = await asyncio.to_thread(self._predict_image, path)
+                    logger.info(
+                        f"  페이지 {idx}/{len(images)} 완료 "
+                        f"({time.perf_counter() - t_page:.2f}s, {len(text):,}자)"
+                    )
+                    return f"## Page {idx}\n\n{text}"
+
+            tasks = [_ocr_page(i, p) for i, p in enumerate(img_paths, start=1)]
+            page_texts = await asyncio.gather(*tasks)
+
+            total = time.perf_counter() - t
+            logger.info(f"  PDF 전체 OCR 완료: {len(images)}페이지 ({total:.2f}s)")
             return "\n\n---\n\n".join(page_texts)
 
 
