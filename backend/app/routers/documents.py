@@ -70,12 +70,19 @@ async def _process_document(doc_id: str, file_path: str):
         )
         store.update(doc_id, classification=classification, status="indexing")
 
-        # 3. 청킹
+        # 3. 청킹 + 캐시 저장
         t = time.perf_counter()
         chunks = chunk_text(text)
         timings["chunk"] = time.perf_counter() - t
         logger.info(
             f"[{doc_id}] ✔ 청킹 완료 ({timings['chunk']:.3f}s, {len(chunks)}개 청크)"
+        )
+
+        # 청크 결과를 JSON으로 캐시 (재청킹 방지)
+        import json as _json
+        chunks_cache_path = Path(file_path).with_suffix(".chunks.json")
+        chunks_cache_path.write_text(
+            _json.dumps(chunks, ensure_ascii=False), encoding="utf-8"
         )
 
         # 4. 임베딩
@@ -196,16 +203,27 @@ async def get_document_markdown(doc_id: str):
 
 @router.get("/{doc_id}/chunks", response_model=ChunksResponse)
 async def get_document_chunks(doc_id: str):
-    """저장된 마크다운을 동일한 청커로 다시 잘라 청크 목록을 반환.
-
-    Qdrant 안에도 청크가 있지만, 화면 표시는 결정론적인 재계산이 더 단순하고 빠르다.
-    """
+    """캐시된 청크 결과를 반환. 캐시가 없으면 재청킹 후 캐시 생성."""
     store = get_doc_store()
     doc = store.get(doc_id)
     if not doc:
         raise HTTPException(404, "문서를 찾을 수 없습니다")
-    md = _read_markdown(doc)
-    chunks = chunk_text(md)
+
+    import json as _json
+
+    # 캐시 파일 확인
+    fp = Path(doc.get("file_path", ""))
+    cache_path = fp.with_suffix(".chunks.json")
+    if cache_path.exists():
+        chunks = _json.loads(cache_path.read_text(encoding="utf-8"))
+    else:
+        # 캐시 없으면 재청킹 후 캐시 저장 (기존 문서 호환)
+        md = _read_markdown(doc)
+        chunks = chunk_text(md)
+        cache_path.write_text(
+            _json.dumps(chunks, ensure_ascii=False), encoding="utf-8"
+        )
+
     return ChunksResponse(
         doc_id=doc_id,
         count=len(chunks),
@@ -222,13 +240,11 @@ async def delete_document(doc_id: str):
     if not doc:
         raise HTTPException(404, "문서를 찾을 수 없습니다")
 
-    # 파일 삭제
+    # 파일 삭제 (원본 + OCR 텍스트 + 청크 캐시)
     fp = Path(doc.get("file_path", ""))
-    if fp.exists():
-        fp.unlink()
-    txt = fp.with_suffix(".txt")
-    if txt.exists():
-        txt.unlink()
+    for p in [fp, fp.with_suffix(".txt"), fp.with_suffix(".chunks.json")]:
+        if p.exists():
+            p.unlink()
 
     # 벡터 삭제
     vector_store = get_vector_store()
