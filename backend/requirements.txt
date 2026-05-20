@@ -13,6 +13,7 @@ paddlepaddle-gpu
 paddleocr[doc-parser]
 pdf2image==1.17.0         # 별도로 시스템에 poppler 설치 필요 (PDF → 이미지 변환)
 pillow==11.0.0
+beautifulsoup4==4.14.3    # OCR 출력의 <table> HTML 단편 → 마크다운 표 변환
 
 # LLM / Embedding
 httpx==0.27.2

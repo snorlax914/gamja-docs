@@ -14,6 +14,7 @@ from pdf2image import convert_from_path
 from PIL import Image
 
 from app.config import settings
+from app.services.table_converter import html_tables_to_markdown
 
 # vLLM 서버에 동시에 보내는 최대 페이지 수 (GPU 메모리 보호)
 MAX_CONCURRENT_PAGES = 4
@@ -36,13 +37,17 @@ class OCRService:
         logger.info(f"PaddleOCR-VL 파이프라인 준비 완료 ({time.perf_counter() - t:.2f}s)")
 
     def _predict_image(self, image_path: str) -> str:
-        """단일 이미지 OCR → markdown 텍스트 반환"""
+        """단일 이미지 OCR → markdown 텍스트 반환.
+
+        PaddleOCR-VL이 표를 `<table>` HTML 단편으로 내보내는 케이스를 마크다운 표로
+        변환해, 후속 청커가 표를 한 청크 안에 묶어 보존할 수 있게 한다.
+        """
         output = self.pipeline.predict(image_path)
         markdown_parts: List[str] = []
         for res in output:
             md = res.markdown.get("markdown_texts", "") if hasattr(res, "markdown") else ""
             if md:
-                markdown_parts.append(md)
+                markdown_parts.append(html_tables_to_markdown(md))
         return "\n\n".join(markdown_parts)
 
     async def extract_text(self, file_path: str) -> str:
