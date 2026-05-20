@@ -11,24 +11,15 @@ type Props = {
   onRefresh: () => void;
 };
 
-const STATUS_LABEL: Record<string, string> = {
-  processing: '처리 중 · OCR',
-  classifying: '처리 중 · 분류',
-  indexing: '처리 중 · 색인',
+const STATUS_LABEL_SHORT: Record<string, string> = {
+  processing: 'OCR 중',
+  classifying: '분류 중',
+  indexing: '색��� 중',
   ready: '준비 완료',
   error: '오류',
 };
 
-const STATUS_COLOR: Record<string, string> = {
-  processing: 'bg-blue-500',
-  classifying: 'bg-blue-500',
-  indexing: 'bg-blue-500',
-  ready: 'bg-emerald-500',
-  error: 'bg-red-500',
-};
-
 export default function DocList({ docs, selectedId, onSelect, onDelete, onRefresh }: Props) {
-  // 처리 중인 문서가 있으면 폴링
   useEffect(() => {
     const pending = docs.some((d) => d.status !== 'ready' && d.status !== 'error');
     if (!pending) return;
@@ -36,60 +27,66 @@ export default function DocList({ docs, selectedId, onSelect, onDelete, onRefres
     return () => clearInterval(t);
   }, [docs, onRefresh]);
 
-  if (docs.length === 0) {
-    return (
-      <div className="px-4 py-8 text-center font-mono text-xs uppercase tracking-widest text-stone-400">
-        no documents yet
-      </div>
-    );
-  }
-
   return (
-    <ul className="divide-y divide-stone-200">
-      {docs.map((d) => {
-        const active = d.doc_id === selectedId;
-        return (
-          <li key={d.doc_id} className="group relative">
-            <button
-              onClick={() => onSelect(d.doc_id)}
-              className={`flex w-full items-start gap-3 px-4 py-3 pr-10 text-left transition-colors
-                ${active ? 'bg-amber-50' : 'hover:bg-stone-100'}`}
-            >
-              <span
-                className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${STATUS_COLOR[d.status] ?? 'bg-stone-400'} ${
-                  d.status !== 'ready' && d.status !== 'error' ? 'animate-pulse' : ''
-                }`}
-                aria-hidden
-              />
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium text-stone-800">{d.filename}</div>
-                <div className="mt-0.5 flex items-center gap-2 font-mono text-[10px] uppercase tracking-wider text-stone-500">
-                  <span>{STATUS_LABEL[d.status] ?? d.status}</span>
-                  {d.classification && (
-                    <>
-                      <span>·</span>
-                      <span className="text-amber-700">{d.classification.category}</span>
-                    </>
-                  )}
+    <div className="flex flex-1 flex-col min-h-0">
+      <div className="flex items-baseline justify-between px-5 pb-3 pt-4">
+        <span className="font-ui text-xs font-semibold text-cool">문서</span>
+        <span className="font-ui text-xs font-medium text-silver">· {docs.length}개</span>
+      </div>
+
+      {docs.length === 0 ? (
+        <div className="px-5 font-ui text-[13px] text-silver">
+          아직 업로드된 문서가 없습니다
+        </div>
+      ) : (
+        <div className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 pb-5">
+          {docs.map((d) => {
+            const active = d.doc_id === selectedId;
+            const indicatorCls =
+              d.status === 'ready'
+                ? 'bg-green-sem'
+                : d.status === 'error'
+                ? 'bg-red-sem'
+                : 'bg-kp animate-pulse-dot';
+
+            return (
+              <div
+                key={d.doc_id}
+                onClick={() => onSelect(d.doc_id)}
+                className={`group relative grid cursor-pointer grid-cols-[14px_1fr_auto] items-center gap-3 rounded-[10px] px-2.5 py-3 transition-colors
+                  ${active ? 'bg-bg-sunken shadow-[inset_3px_0_0_#7132f5]' : 'hover:bg-bg-sunken'}`}
+              >
+                <span className={`ml-0.5 h-2 w-2 rounded-full ${indicatorCls}`} />
+                <div className="min-w-0">
+                  <div className={`truncate font-ui text-sm text-ink ${active ? 'font-semibold' : 'font-medium'}`}>
+                    {d.filename}
+                  </div>
+                  <div className="mt-0.5 flex items-center gap-1.5 font-ui text-xs text-silver">
+                    <span>{STATUS_LABEL_SHORT[d.status] ?? d.status}</span>
+                    {d.classification && (
+                      <span className="rounded-[5px] border border-border-main bg-white px-1.5 py-px text-[11px] font-medium text-ink">
+                        {d.classification.category}
+                      </span>
+                    )}
+                  </div>
                 </div>
+                <button
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    if (confirm('삭제하시겠습니까?')) {
+                      await deleteDocument(d.doc_id);
+                      onDelete(d.doc_id);
+                    }
+                  }}
+                  className="rounded-md bg-secondary-bg px-2 py-1 font-ui text-[11px] font-medium text-cool opacity-0 transition-opacity hover:bg-red-bg hover:text-red-sem group-hover:opacity-100"
+                >
+                  삭제
+                </button>
               </div>
-            </button>
-            <button
-              onClick={async (e) => {
-                e.stopPropagation();
-                if (confirm('삭제하시겠습니까?')) {
-                  await deleteDocument(d.doc_id);
-                  onDelete(d.doc_id);
-                }
-              }}
-              className="absolute right-3 top-1/2 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-100"
-              aria-label="delete"
-            >
-              <span className="font-mono text-xs text-stone-400 hover:text-red-600">×</span>
-            </button>
-          </li>
-        );
-      })}
-    </ul>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }

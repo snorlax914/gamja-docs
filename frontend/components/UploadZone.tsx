@@ -25,12 +25,9 @@ export default function UploadZone({ onUploaded }: Props) {
   }
 
   return (
-    <div className="w-full">
+    <div className="border-b border-border-soft p-5">
       <div
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDragOver(true);
-        }}
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
         onDrop={(e) => {
           e.preventDefault();
@@ -39,9 +36,15 @@ export default function UploadZone({ onUploaded }: Props) {
           if (file) handleFile(file);
         }}
         onClick={() => inputRef.current?.click()}
-        className={`relative cursor-pointer rounded-sm border-2 border-dashed p-10 text-center transition-all
-          ${dragOver ? 'border-amber-600 bg-amber-50' : 'border-stone-300 bg-white hover:border-stone-400'}
-          ${busy ? 'pointer-events-none opacity-60' : ''}`}
+        className={`relative cursor-pointer rounded-[12px] border-[1.5px] border-dashed px-5 py-7 text-center transition-all
+          ${dragOver
+            ? 'border-solid border-kp bg-kp-subtle shadow-[0_0_0_4px_rgba(113,50,245,0.08)]'
+            : busy
+            ? 'pointer-events-none border-solid border-kp bg-white'
+            : err
+            ? 'border-red-sem bg-red-bg'
+            : 'border-border-main bg-white hover:border-kp hover:bg-kp-tint'
+          }`}
       >
         <input
           ref={inputRef}
@@ -54,17 +57,35 @@ export default function UploadZone({ onUploaded }: Props) {
             e.target.value = '';
           }}
         />
-        <div className="font-mono text-xs uppercase tracking-widest text-stone-500">
-          {busy ? 'uploading...' : 'drop file or click'}
+
+        <div className={`mb-2.5 font-ui text-xs font-medium ${
+          dragOver ? 'font-semibold text-kp'
+            : busy ? 'font-semibold text-kp'
+            : err ? 'font-semibold text-red-sem'
+            : 'text-silver'
+        }`}>
+          {dragOver ? '여기에 놓으세요' : busy ? '업로드 중...' : err ? '업로드 실패' : '파일을 드래그하거나 클릭'}
         </div>
-        <div className="mt-3 text-lg font-medium text-stone-800">문서를 업로드하세요</div>
-        <div className="mt-1 text-sm text-stone-500">PDF · PNG · JPG · TIFF · WEBP (최대 20MB)</div>
+
+        <div className="font-display text-[17px] font-semibold tracking-tight text-ink">
+          문서를 업로드하세요
+        </div>
+        <div className="mt-1.5 font-ui text-xs text-silver">
+          pdf · png · jpg · bmp · tiff · webp · 최대 20mb
+        </div>
+
+        {busy && (
+          <div className="mt-3.5 h-1 overflow-hidden rounded-full bg-border-soft">
+            <div className="h-full animate-indeterminate rounded-full bg-kp" />
+          </div>
+        )}
+
+        {err && (
+          <div className="mt-2.5 rounded-lg border border-red-sem/30 bg-white px-2.5 py-2 text-left font-ui text-xs text-red-sem">
+            {err}
+          </div>
+        )}
       </div>
-      {err && (
-        <div className="mt-3 rounded-sm border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          {err}
-        </div>
-      )}
     </div>
   );
 }
