@@ -12,7 +12,7 @@ type Tab = 'markdown' | 'chunks';
 
 const STAGES = [
   { key: 'ocr', name: 'OCR' },
-  { key: 'classify', name: '���류' },
+  { key: 'classify', name: '분류' },
   { key: 'index', name: '청킹·임베딩' },
   { key: 'done', name: '완료' },
 ];
@@ -267,7 +267,7 @@ function ChunkList({ chunks }: { chunks: ChunkInfo[] }) {
         {chunks.map((c) => {
           const open = openSet.has(c.idx);
           return (
-            <div key={c.idx} className={`overflow-hidden rounded-[10px] border transition-colors ${
+            <div key={c.idx} className={`shrink-0 overflow-hidden rounded-[10px] border transition-colors ${
               open ? 'border-kp/25 shadow-whisper' : 'border-border-soft hover:border-border-main'
             } bg-white`}>
               <button

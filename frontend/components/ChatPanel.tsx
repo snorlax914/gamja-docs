@@ -1,7 +1,7 @@
 'use client';
 
-import { ReactNode, useEffect, useRef, useState } from 'react';
-import { ChatSource, chatStream } from '@/lib/api';
+import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { ChatSource, chatStream, DocumentInfo } from '@/lib/api';
 
 type Message = {
   role: 'user' | 'assistant';
@@ -10,21 +10,66 @@ type Message = {
   streaming?: boolean;
 };
 
-export default function ChatPanel({ docId, disabled }: { docId: string; disabled?: boolean }) {
+type Props = {
+  docId: string;
+  docs: DocumentInfo[];
+};
+
+export default function ChatPanel({ docId, docs }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
+  // 질의 범위로 선택된 문서 ID 집합. 비어 있으면 "전체 문서" 로 해석.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set([docId]));
+  const [scopeOpen, setScopeOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const scopeRef = useRef<HTMLDivElement>(null);
 
+  // ready 문서만 선택지로 노출. 현재 포커스된 문서는 ready 가 아니더라도 표시(체크 불가).
+  const readyDocs = useMemo(
+    () => docs.filter((d) => d.status === 'ready'),
+    [docs],
+  );
+
+  // 다른 문서로 포커스가 옮겨가면 그 문서를 기본 선택으로 reset
+  // (이전에 다중 선택해 두었더라도, 문서 클릭이 명확한 의도 표현이라 보고 단일로 되돌림)
   useEffect(() => {
+    setSelectedIds(new Set([docId]));
     setMessages([]);
     abortRef.current?.abort();
   }, [docId]);
 
+  // popover 외부 클릭 시 닫기
+  useEffect(() => {
+    if (!scopeOpen) return;
+    const onClick = (e: MouseEvent) => {
+      if (scopeRef.current && !scopeRef.current.contains(e.target as Node)) {
+        setScopeOpen(false);
+      }
+    };
+    window.addEventListener('mousedown', onClick);
+    return () => window.removeEventListener('mousedown', onClick);
+  }, [scopeOpen]);
+
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages]);
+
+  function toggleSelected(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  function selectAll() {
+    setSelectedIds(new Set(readyDocs.map((d) => d.doc_id)));
+  }
+  function clearAll() {
+    setSelectedIds(new Set());
+  }
 
   async function send() {
     const q = input.trim();
@@ -41,9 +86,11 @@ export default function ChatPanel({ docId, disabled }: { docId: string; disabled
     const ac = new AbortController();
     abortRef.current = ac;
 
+    // 선택이 비어 있으면 null 을 넘겨 전체 문서 검색을 요청한다.
+    const targetIds = selectedIds.size === 0 ? null : Array.from(selectedIds);
     try {
       await chatStream(
-        docId,
+        targetIds,
         q,
         {
           onSources: (sources) => {
@@ -97,17 +144,119 @@ export default function ChatPanel({ docId, disabled }: { docId: string; disabled
     }
   }
 
-  const ready = !disabled;
+  // 질의 가능 여부:
+  // - 선택이 비어 있다(전체 모드)면 ready 문서가 1개라도 있어야 함
+  // - 선택이 있으면 그 중 ready 인 문서가 1개라도 있어야 함
+  const ready = useMemo(() => {
+    if (selectedIds.size === 0) return readyDocs.length > 0;
+    return readyDocs.some((d) => selectedIds.has(d.doc_id));
+  }, [selectedIds, readyDocs]);
   const canSend = ready && !busy && input.trim().length > 0;
+
+  // 헤더 라벨/상태 텍스트
+  const scopeLabel =
+    selectedIds.size === 0
+      ? `전체 문서 (${readyDocs.length})`
+      : selectedIds.size === 1
+      ? '1개 문서'
+      : `${selectedIds.size}개 문서`;
+  const statusText = ready
+    ? selectedIds.size === 0
+      ? '준비됨 · 전체 문서 기반'
+      : selectedIds.size === 1
+      ? '준비됨 · 선택한 문서 기반'
+      : `준비됨 · 선택된 ${selectedIds.size}개 문서 기반`
+    : '문서 대기 중';
 
   return (
     <section className="flex min-h-[600px] flex-1 flex-col border-t border-border-main bg-white">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border-soft px-10 py-[18px]">
         <h3 className="font-display text-[22px] font-bold tracking-tight text-ink">채팅</h3>
-        <span className="font-ui text-[13px] font-medium text-silver">
-          {ready ? '준비됨 · 선택한 문서 기반' : '문서 대기 중'}
-        </span>
+        <div className="flex items-center gap-3">
+          <div ref={scopeRef} className="relative">
+            <button
+              type="button"
+              onClick={() => setScopeOpen((v) => !v)}
+              aria-expanded={scopeOpen}
+              aria-haspopup="dialog"
+              className="inline-flex items-center gap-1.5 rounded-[10px] border border-border-main bg-white px-3 py-1.5 font-ui text-[12px] font-semibold text-ink transition hover:border-kp hover:text-kp"
+            >
+              <span>범위 · {scopeLabel}</span>
+              <span className={`text-[10px] transition-transform ${scopeOpen ? 'rotate-180' : ''}`}>▾</span>
+            </button>
+
+            {scopeOpen && (
+              <div
+                role="dialog"
+                aria-label="질의 범위 선택"
+                className="absolute right-0 top-[calc(100%+6px)] z-20 w-[320px] overflow-hidden rounded-[12px] border border-border-main bg-white shadow-lg"
+              >
+                <div className="flex items-center justify-between border-b border-border-soft px-3.5 py-2.5">
+                  <span className="font-ui text-[12px] font-semibold text-cool">
+                    질의 대상 문서 선택
+                  </span>
+                  <div className="flex gap-2 font-ui text-[11px] font-semibold">
+                    <button
+                      type="button"
+                      onClick={selectAll}
+                      disabled={readyDocs.length === 0}
+                      className="text-kp transition hover:text-kp-dark disabled:text-silver"
+                    >
+                      모두 선택
+                    </button>
+                    <span className="text-border-main">·</span>
+                    <button
+                      type="button"
+                      onClick={clearAll}
+                      className="text-cool transition hover:text-ink"
+                    >
+                      해제
+                    </button>
+                  </div>
+                </div>
+
+                <div className="max-h-[260px] overflow-y-auto py-1">
+                  {readyDocs.length === 0 ? (
+                    <div className="px-4 py-6 text-center font-ui text-[12px] text-silver">
+                      준비된 문서가 없습니다
+                    </div>
+                  ) : (
+                    readyDocs.map((d) => {
+                      const checked = selectedIds.has(d.doc_id);
+                      return (
+                        <label
+                          key={d.doc_id}
+                          className="flex cursor-pointer items-center gap-2.5 px-3.5 py-2 transition hover:bg-bg-sunken"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleSelected(d.doc_id)}
+                            className="h-4 w-4 cursor-pointer accent-kp"
+                          />
+                          <span className="min-w-0 flex-1 truncate font-ui text-[13px] text-ink">
+                            {d.filename}
+                          </span>
+                          {d.classification?.category && (
+                            <span className="shrink-0 rounded-md bg-kp-subtle px-2 py-0.5 font-ui text-[10px] font-semibold text-kp">
+                              {d.classification.category}
+                            </span>
+                          )}
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
+
+                <div className="border-t border-border-soft bg-bg-sunken px-3.5 py-2 font-ui text-[11px] text-silver">
+                  선택을 비우면 전체 문서를 대상으로 질의합니다.
+                </div>
+              </div>
+            )}
+          </div>
+          <span className="font-ui text-[13px] font-medium text-silver">{statusText}</span>
+        </div>
       </div>
 
       {/* Messages */}
@@ -117,7 +266,13 @@ export default function ChatPanel({ docId, disabled }: { docId: string; disabled
             <div className="font-display text-[22px] font-semibold tracking-tight text-cool">
               무엇이든 물어보세요
             </div>
-            <div className="mt-1.5 text-sm">업로드한 문서 내용을 바탕으로 답변해 드립니다.</div>
+            <div className="mt-1.5 text-sm">
+              {selectedIds.size === 0
+                ? '업로드된 모든 문서를 대상으로 답변해 드립니다.'
+                : selectedIds.size === 1
+                ? '선택한 문서의 내용을 바탕으로 답변해 드립니다.'
+                : `선택한 ${selectedIds.size}개 문서를 종합해 답변해 드립니다.`}
+            </div>
           </div>
         )}
 
@@ -140,7 +295,15 @@ export default function ChatPanel({ docId, disabled }: { docId: string; disabled
                 if (canSend) send();
               }
             }}
-            placeholder={ready ? '질문을 입력하세요...' : '문서가 준비되면 질문할 수 있습니다'}
+            placeholder={
+              ready
+                ? selectedIds.size === 0
+                  ? '전체 문서에 대해 질문해 보세요...'
+                  : selectedIds.size > 1
+                  ? `선택된 ${selectedIds.size}개 문서에 대해 질문해 보세요...`
+                  : '질문을 입력하세요...'
+                : '문서가 준비되면 질문할 수 있습니다'
+            }
             disabled={!ready || busy}
             rows={1}
             className="max-h-[160px] min-h-[26px] resize-none border-none bg-transparent py-1.5 font-ui text-[15px] leading-normal text-ink outline-none placeholder:text-silver"
@@ -239,9 +402,14 @@ function MessageBubble({ message }: { message: Message }) {
                     <span className="font-mono text-[11px] text-cool">
                       {s.score.toFixed(3)}
                     </span>
-                    <span className="line-clamp-2 leading-normal text-cool">
-                      {s.text}
-                    </span>
+                    <div className="min-w-0 leading-normal text-cool">
+                      {s.filename && (
+                        <div className="mb-0.5 truncate font-ui text-[11px] font-semibold text-kp">
+                          {s.filename}
+                        </div>
+                      )}
+                      <div className="line-clamp-2">{s.text}</div>
+                    </div>
                   </div>
                 ))}
               </div>

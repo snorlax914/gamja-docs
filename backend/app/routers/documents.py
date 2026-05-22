@@ -240,18 +240,22 @@ async def delete_document(doc_id: str):
     if not doc:
         raise HTTPException(404, "문서를 찾을 수 없습니다")
 
-    # 파일 삭제 (원본 + OCR 텍스트 + 청크 캐시)
+    # 1. 벡터 먼저 삭제 — 실패하면 doc_store를 건드리지 않고 에러를 반환해
+    #    재시도가 가능하게 한다. (메타데이터만 지워지면 고아 벡터가 영구히 남음)
+    vector_store = get_vector_store()
+    try:
+        await vector_store.delete_doc(doc_id)
+    except Exception as e:
+        logger.error(f"Qdrant 벡터 삭제 실패 (doc_id={doc_id}): {e}")
+        raise HTTPException(502, f"벡터 DB에서 삭제하지 못했습니다: {e}")
+
+    # 2. 파일 삭제 (원본 + OCR 텍스트 + 청크 캐시)
     fp = Path(doc.get("file_path", ""))
     for p in [fp, fp.with_suffix(".txt"), fp.with_suffix(".chunks.json")]:
         if p.exists():
             p.unlink()
 
-    # 벡터 삭제
-    vector_store = get_vector_store()
-    try:
-        await vector_store.delete_doc(doc_id)
-    except Exception as e:
-        logger.warning(f"벡터 삭제 실패: {e}")
-
+    # 3. 메타데이터 삭제
     store.delete(doc_id)
+    logger.info(f"문서 삭제 완료: {doc_id}")
     return {"deleted": doc_id}

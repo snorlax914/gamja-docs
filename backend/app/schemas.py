@@ -29,7 +29,8 @@ class DocumentInfo(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    doc_id: str
+    # doc_ids 가 None 또는 빈 리스트면 전체 문서를 대상으로 검색한다.
+    doc_ids: Optional[list[str]] = None
     question: str
 
 
@@ -37,6 +38,8 @@ class SearchHit(BaseModel):
     text: str
     score: float
     chunk_idx: Optional[int] = None
+    doc_id: Optional[str] = None
+    filename: Optional[str] = None
 
 
 class ChunkInfo(BaseModel):

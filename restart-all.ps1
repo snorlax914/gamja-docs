@@ -5,16 +5,20 @@
     .\restart-all.ps1            # backend WITH --reload (dev mode)
     .\restart-all.ps1 -NoReload  # backend WITHOUT --reload (saves ~RAM, no auto-restart on edits)
     .\restart-all.ps1 -StopOnly  # just stop everything, don't start
+    .\restart-all.ps1 -Headless  # no GUI windows; logs go to .\logs\  (use this over SSH)
 
-  Backend and frontend each open in their own PowerShell window so you can see their logs.
-  Closing one of those windows stops that service.
+  Without -Headless: backend and frontend each open in their own PowerShell window
+  so you can see their logs; closing a window stops that service.
+  With -Headless: both run hidden and their output is redirected to .\logs\,
+  so the script works over an SSH session with no desktop.
 
   Order:  stop everything  ->  docker compose up (qdrant + paddleocr-vl)  ->  wait  ->  backend  ->  frontend
   Note: Ollama is expected to already be running (Windows app / 'ollama serve'); the script only warns if not.
 #>
 param(
   [switch]$NoReload,
-  [switch]$StopOnly
+  [switch]$StopOnly,
+  [switch]$Headless
 )
 
 $ErrorActionPreference = 'Continue'
@@ -22,6 +26,7 @@ $root        = $PSScriptRoot
 $backendDir  = Join-Path $root 'backend'
 $frontendDir = Join-Path $root 'frontend'
 $dockerDir   = Join-Path $root 'docker'
+$logDir      = Join-Path $root 'logs'
 $venvPy      = Join-Path $backendDir '.venv\Scripts\python.exe'
 $vllmImage   = 'ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddleocr-genai-vllm-server:latest-nvidia-gpu'
 
@@ -81,14 +86,33 @@ Wait-Url 'http://localhost:8118/v1/models'   'PaddleOCR-VL (vLLM)' 300 | Out-Nul
 # ---- 4) backend ----
 Write-Host "`n[4/5] Starting backend (uvicorn :8000) ..." -ForegroundColor Cyan
 $reloadFlag = if ($NoReload) { '' } else { '--reload' }
-$beCmd = "Set-Location '$backendDir'; Write-Host 'gamja-docs BACKEND  ->  http://localhost:8000' -ForegroundColor Cyan; & '$venvPy' -m uvicorn app.main:app --port 8000 $reloadFlag"
-Start-Process powershell -ArgumentList '-NoExit','-Command',$beCmd
+if ($Headless) {
+  New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+  $beArgs = @('-m','uvicorn','app.main:app','--port','8000')
+  if (-not $NoReload) { $beArgs += '--reload' }
+  Start-Process -FilePath $venvPy -ArgumentList $beArgs -WorkingDirectory $backendDir `
+    -WindowStyle Hidden `
+    -RedirectStandardOutput (Join-Path $logDir 'backend.out.log') `
+    -RedirectStandardError  (Join-Path $logDir 'backend.err.log')
+  Write-Host "  backend (headless) -> $logDir\backend.err.log" -ForegroundColor DarkGray
+} else {
+  $beCmd = "Set-Location '$backendDir'; Write-Host 'gamja-docs BACKEND  ->  http://localhost:8000' -ForegroundColor Cyan; & '$venvPy' -m uvicorn app.main:app --port 8000 $reloadFlag"
+  Start-Process powershell -ArgumentList '-NoExit','-Command',$beCmd
+}
 Wait-Url 'http://localhost:8000/health' 'backend' 120 | Out-Null
 
 # ---- 5) frontend ----
 Write-Host "`n[5/5] Starting frontend (next dev :3000) ..." -ForegroundColor Cyan
-$feCmd = "Set-Location '$frontendDir'; Write-Host 'gamja-docs FRONTEND  ->  http://localhost:3000' -ForegroundColor Green; npm run dev"
-Start-Process powershell -ArgumentList '-NoExit','-Command',$feCmd
+if ($Headless) {
+  Start-Process -FilePath 'cmd.exe' -ArgumentList '/c','npm','run','dev' -WorkingDirectory $frontendDir `
+    -WindowStyle Hidden `
+    -RedirectStandardOutput (Join-Path $logDir 'frontend.out.log') `
+    -RedirectStandardError  (Join-Path $logDir 'frontend.err.log')
+  Write-Host "  frontend (headless) -> $logDir\frontend.err.log" -ForegroundColor DarkGray
+} else {
+  $feCmd = "Set-Location '$frontendDir'; Write-Host 'gamja-docs FRONTEND  ->  http://localhost:3000' -ForegroundColor Green; npm run dev"
+  Start-Process powershell -ArgumentList '-NoExit','-Command',$feCmd
+}
 Wait-Url 'http://localhost:3000' 'frontend' 120 | Out-Null
 
 Write-Host "`nDone." -ForegroundColor Green
@@ -96,4 +120,11 @@ Write-Host "  Frontend : http://localhost:3000"
 Write-Host "  Backend  : http://localhost:8000/docs"
 Write-Host "  Qdrant   : http://localhost:6333/dashboard"
 Write-Host "  vLLM OCR : http://localhost:8118/v1/models"
-Write-Host "`nBackend & frontend run in their own windows -- closing a window stops that service."
+if ($Headless) {
+  Write-Host "`nHeadless mode -- logs are in $logDir"
+  Write-Host "  Backend errors : $logDir\error.log"
+  Write-Host "  Backend (all)  : $logDir\backend_<date>.log"
+  Write-Host "  View live      : Get-Content '$logDir\error.log' -Wait -Tail 30"
+} else {
+  Write-Host "`nBackend & frontend run in their own windows -- closing a window stops that service."
+}

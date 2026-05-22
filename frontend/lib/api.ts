@@ -76,7 +76,13 @@ export async function getDocumentChunks(docId: string): Promise<ChunksResponse> 
   return res.json();
 }
 
-export type ChatSource = { chunk_idx: number | null; score: number; text: string };
+export type ChatSource = {
+  chunk_idx: number | null;
+  score: number;
+  text: string;
+  doc_id?: string | null;
+  filename?: string | null;
+};
 
 export type ChatStreamHandlers = {
   onSources?: (sources: ChatSource[]) => void;
@@ -90,15 +96,18 @@ export type ChatStreamHandlers = {
  * EventSource는 POST를 못 보내서 사용 안 함.
  */
 export async function chatStream(
-  docId: string,
+  docIds: string[] | null,
   question: string,
   handlers: ChatStreamHandlers,
   signal?: AbortSignal,
 ) {
+  // docIds 가 null 또는 빈 배열이면 전체 문서 대상으로 질의.
+  const body: Record<string, unknown> = { question };
+  if (docIds && docIds.length > 0) body.doc_ids = docIds;
   const res = await fetch('/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ doc_id: docId, question }),
+    body: JSON.stringify(body),
     signal,
   });
   if (!res.ok || !res.body) {

@@ -74,10 +74,7 @@ export default function Home() {
             <>
               <DocDetail doc={selected} />
               <ResultDashboard doc={selected} />
-              <ChatPanel
-                docId={selected.doc_id}
-                disabled={selected.status !== 'ready'}
-              />
+              <ChatPanel docId={selected.doc_id} docs={docs} />
             </>
           ) : (
             <div className="flex flex-1 flex-col items-center justify-center gap-1.5 text-silver">

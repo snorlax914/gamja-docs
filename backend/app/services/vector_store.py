@@ -8,6 +8,7 @@ from qdrant_client.models import (
     Distance,
     FieldCondition,
     Filter,
+    MatchAny,
     MatchValue,
     PointStruct,
     VectorParams,
@@ -60,14 +61,27 @@ class VectorStore:
         logger.info(f"문서 {doc_id}: {len(points)}개 청크 저장 완료")
 
     async def search(
-        self, query_vector: List[float], doc_id: str | None = None, top_k: int = 5
+        self,
+        query_vector: List[float],
+        doc_ids: List[str] | None = None,
+        top_k: int = 5,
     ) -> List[dict]:
-        """유사도 검색. doc_id가 주어지면 해당 문서로 제한"""
+        """유사도 검색. doc_ids 가 주어지면 해당 문서들로만 제한.
+
+        - None 또는 빈 리스트 → 전체 컬렉션 대상
+        - 1개 → 단일 문서 검색 (MatchValue)
+        - 2개 이상 → MatchAny 로 합집합 필터
+        """
         query_filter = None
-        if doc_id:
-            query_filter = Filter(
-                must=[FieldCondition(key="doc_id", match=MatchValue(value=doc_id))]
-            )
+        if doc_ids:
+            if len(doc_ids) == 1:
+                query_filter = Filter(
+                    must=[FieldCondition(key="doc_id", match=MatchValue(value=doc_ids[0]))]
+                )
+            else:
+                query_filter = Filter(
+                    must=[FieldCondition(key="doc_id", match=MatchAny(any=list(doc_ids)))]
+                )
 
         results = await self.client.search(
             collection_name=self.collection,
@@ -76,18 +90,25 @@ class VectorStore:
             limit=top_k,
         )
         return [
-            {"text": r.payload["text"], "score": r.score, "chunk_idx": r.payload.get("chunk_idx")}
+            {
+                "text": r.payload.get("text", ""),
+                "score": r.score,
+                "chunk_idx": r.payload.get("chunk_idx"),
+                "doc_id": r.payload.get("doc_id"),
+            }
             for r in results
         ]
 
     async def delete_doc(self, doc_id: str):
-        """문서의 모든 청크 삭제"""
+        """문서의 모든 청크 삭제. wait=True 로 삭제 완료를 보장."""
         await self.client.delete(
             collection_name=self.collection,
             points_selector=Filter(
                 must=[FieldCondition(key="doc_id", match=MatchValue(value=doc_id))]
             ),
+            wait=True,
         )
+        logger.info(f"문서 {doc_id}: Qdrant 청크 삭제 완료")
 
 
 _store: VectorStore | None = None

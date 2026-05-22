@@ -6,7 +6,7 @@ const STATUS_LABEL: Record<string, string> = {
   processing: 'OCR 진행 중',
   classifying: '분류 진행 중',
   indexing: '청킹·임베딩·색인 진행 중',
-  ready: '준비 ���료',
+  ready: '준비 완료',
   error: '오류',
 };
 

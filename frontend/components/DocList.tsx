@@ -14,7 +14,7 @@ type Props = {
 const STATUS_LABEL_SHORT: Record<string, string> = {
   processing: 'OCR 중',
   classifying: '분류 중',
-  indexing: '색��� 중',
+  indexing: '색인 중',
   ready: '준비 완료',
   error: '오류',
 };
@@ -73,9 +73,12 @@ export default function DocList({ docs, selectedId, onSelect, onDelete, onRefres
                 <button
                   onClick={async (e) => {
                     e.stopPropagation();
-                    if (confirm('삭제하시겠습니까?')) {
+                    if (!confirm('삭제하시겠습니까?')) return;
+                    try {
                       await deleteDocument(d.doc_id);
                       onDelete(d.doc_id);
+                    } catch (err) {
+                      alert(`삭제 실패: ${err instanceof Error ? err.message : String(err)}`);
                     }
                   }}
                   className="rounded-md bg-secondary-bg px-2 py-1 font-ui text-[11px] font-medium text-cool opacity-0 transition-opacity hover:bg-red-bg hover:text-red-sem group-hover:opacity-100"
